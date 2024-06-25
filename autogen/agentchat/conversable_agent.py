@@ -39,6 +39,7 @@ from .utils import consolidate_chat_info, gather_usage_summary
 __all__ = ("ConversableAgent",)
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -131,6 +132,7 @@ class ConversableAgent(LLMAgent):
         code_execution_config = (
             code_execution_config.copy() if hasattr(code_execution_config, "copy") else code_execution_config
         )
+        logger.debug("conversable init: code_execution_config=%s", code_execution_config)
 
         self._name = name
         # a dictionary of conversations, default value is list
