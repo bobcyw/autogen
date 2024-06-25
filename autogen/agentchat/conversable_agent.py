@@ -78,6 +78,7 @@ class ConversableAgent(LLMAgent):
         default_auto_reply: Union[str, Dict] = "",
         description: Optional[str] = None,
         chat_messages: Optional[Dict[Agent, List[Dict]]] = None,
+        is_async = False
     ):
         """
         Args:
@@ -181,8 +182,10 @@ class ConversableAgent(LLMAgent):
         self._reply_func_list = []
         self._human_input = []
         self.reply_at_receive = defaultdict(bool)
-        self.register_reply([Agent, None], ConversableAgent.generate_oai_reply)
-        self.register_reply([Agent, None], ConversableAgent.a_generate_oai_reply, ignore_async_in_sync_chat=True)
+        if is_async:
+            self.register_reply([Agent, None], ConversableAgent.a_generate_oai_reply, ignore_async_in_sync_chat=True)
+        else:
+            self.register_reply([Agent, None], ConversableAgent.generate_oai_reply)
 
         # Setting up code execution.
         # Do not register code execution reply if code execution is disabled.
@@ -231,16 +234,18 @@ class ConversableAgent(LLMAgent):
             # Code execution is disabled.
             self._code_execution_config = False
 
-        self.register_reply([Agent, None], ConversableAgent.generate_tool_calls_reply)
-        self.register_reply([Agent, None], ConversableAgent.a_generate_tool_calls_reply, ignore_async_in_sync_chat=True)
-        self.register_reply([Agent, None], ConversableAgent.generate_function_call_reply)
-        self.register_reply(
-            [Agent, None], ConversableAgent.a_generate_function_call_reply, ignore_async_in_sync_chat=True
-        )
-        self.register_reply([Agent, None], ConversableAgent.check_termination_and_human_reply)
-        self.register_reply(
-            [Agent, None], ConversableAgent.a_check_termination_and_human_reply, ignore_async_in_sync_chat=True
-        )
+        if is_async:
+            self.register_reply([Agent, None], ConversableAgent.a_generate_tool_calls_reply, ignore_async_in_sync_chat=True)
+            self.register_reply(
+                [Agent, None], ConversableAgent.a_generate_function_call_reply, ignore_async_in_sync_chat=True
+            )
+            self.register_reply(
+                [Agent, None], ConversableAgent.a_check_termination_and_human_reply, ignore_async_in_sync_chat=True
+            )
+        else:
+            self.register_reply([Agent, None], ConversableAgent.generate_tool_calls_reply)
+            self.register_reply([Agent, None], ConversableAgent.generate_function_call_reply)
+            self.register_reply([Agent, None], ConversableAgent.check_termination_and_human_reply)
 
         # Registered hooks are kept in lists, indexed by hookable method, to be called in their order of registration.
         # New hookable methods should be added to this list as required to support new agent capabilities.
@@ -653,6 +658,7 @@ class ConversableAgent(LLMAgent):
         # When the agent composes and sends the message, the role of the message is "assistant"
         # unless it's "function".
         valid = self._append_oai_message(message, "assistant", recipient)
+        logger.debug(f"send2.message: {message}")
         if valid:
             recipient.receive(message, self, request_reply, silent)
         else:
@@ -784,6 +790,83 @@ class ConversableAgent(LLMAgent):
         if not silent:
             self._print_received_message(message, sender)
 
+    async def _a_process_received_message(self, message: Union[Dict, str], sender: Agent, silent: bool):
+        # When the agent receives a message, the role of the message is "user". (If 'role' exists and is 'function', it will remain unchanged.)
+        valid = self._append_oai_message(message, "user", sender)
+        if logging_enabled():
+            log_event(self, "received_message", message=message, sender=sender.name, valid=valid)
+
+        if not valid:
+            raise ValueError(
+                "Received message can't be converted into a valid ChatCompletion message. Either content or function_call must be provided."
+            )
+        if not silent:
+            await self._a_print_received_message(message, sender)
+
+    async def _a_print_received_message(self, message: Union[Dict, str], sender: Agent):
+            iostream = IOStream.get_default()
+            # print the message received
+            # 打印开始的名称
+            await iostream.print(colored(sender.name, "yellow"), "(to", f"{self.name}):\n", flush=True)
+            message = self._message_to_dict(message)
+
+            if message.get("tool_responses"):  # Handle tool multi-call responses
+                for tool_response in message["tool_responses"]:
+                    await self._a_print_received_message(tool_response, sender)
+                if message.get("role") == "tool":
+                    return  # If role is tool, then content is just a concatenation of all tool_responses
+
+            if message.get("role") in ["function", "tool"]:
+                if message["role"] == "function":
+                    id_key = "name"
+                else:
+                    id_key = "tool_call_id"
+                id = message.get(id_key, "No id found")
+                func_print = f"***** Response from calling {message['role']} ({id}) *****"
+                await iostream.print(colored(func_print, "green"), flush=True)
+                await iostream.print(message["content"], flush=True)
+                await iostream.print(colored("*" * len(func_print), "green"), flush=True)
+            else:
+                content = message.get("content")
+                if content is not None:
+                    if "context" in message:
+                        content = OpenAIWrapper.instantiate(
+                            content,
+                            message["context"],
+                            self.llm_config and self.llm_config.get("allow_format_str_template", False),
+                        )
+                    # 打印原上下文
+                    await iostream.print(content_str(content), flush=True)
+                if "function_call" in message and message["function_call"]:
+                    function_call = dict(message["function_call"])
+                    func_print = (
+                        f"***** Suggested function call: {function_call.get('name', '(No function name found)')} *****"
+                    )
+                    await iostream.print(colored(func_print, "green"), flush=True)
+                    await iostream.print(
+                        "Arguments: \n",
+                        function_call.get("arguments", "(No arguments found)"),
+                        flush=True,
+                        sep="",
+                    )
+                    await iostream.print(colored("*" * len(func_print), "green"), flush=True)
+                if "tool_calls" in message and message["tool_calls"]:
+                    for tool_call in message["tool_calls"]:
+                        id = tool_call.get("id", "No tool call id found")
+                        function_call = dict(tool_call.get("function", {}))
+                        func_print = f"***** Suggested tool call ({id}): {function_call.get('name', '(No function name found)')} *****"
+                        await iostream.print(colored(func_print, "green"), flush=True)
+                        await iostream.print(
+                            "Arguments: \n",
+                            function_call.get("arguments", "(No arguments found)"),
+                            flush=True,
+                            sep="",
+                        )
+                        # 打印分割线"---"和tool_calls
+                        await iostream.print(colored("*" * len(func_print), "green"), flush=True)
+
+            await iostream.print("\n", "-" * 80, flush=True, sep="")
+
     def receive(
         self,
         message: Union[Dict, str],
@@ -818,6 +901,7 @@ class ConversableAgent(LLMAgent):
         if request_reply is False or request_reply is None and self.reply_at_receive[sender] is False:
             return
         reply = self.generate_reply(messages=self.chat_messages[sender], sender=sender)
+        logger.debug(f"recv2.reply: {reply}")
         if reply is not None:
             self.send(reply, sender, silent=silent)
 
@@ -851,7 +935,7 @@ class ConversableAgent(LLMAgent):
         Raises:
             ValueError: if the message can't be converted into a valid ChatCompletion message.
         """
-        self._process_received_message(message, sender, silent)
+        await self._a_process_received_message(message, sender, silent)
         if request_reply is False or request_reply is None and self.reply_at_receive[sender] is False:
             return
         reply = await self.a_generate_reply(sender=sender)
@@ -1871,7 +1955,7 @@ class ConversableAgent(LLMAgent):
 
         # print the no_human_input_msg
         if no_human_input_msg:
-            iostream.print(colored(f"\n>>>>>>>> {no_human_input_msg}", "red"), flush=True)
+            await iostream.print(colored(f"\n>>>>>>>> {no_human_input_msg}", "red"), flush=True)
 
         # stop the conversation
         if reply == "exit":
@@ -1911,7 +1995,7 @@ class ConversableAgent(LLMAgent):
         # increment the consecutive_auto_reply_counter
         self._consecutive_auto_reply_counter[sender] += 1
         if self.human_input_mode != "NEVER":
-            iostream.print(colored("\n>>>>>>>> USING AUTO REPLY...", "red"), flush=True)
+            await iostream.print(colored("\n>>>>>>>> USING AUTO REPLY...", "red"), flush=True)
 
         return False, None
 
@@ -2112,8 +2196,10 @@ class ConversableAgent(LLMAgent):
         Returns:
             str: human input.
         """
-        loop = asyncio.get_running_loop()
-        reply = await loop.run_in_executor(None, functools.partial(self.get_human_input, prompt))
+        iostream = IOStream.get_default()
+
+        reply = await iostream.input(prompt)
+        self._human_input.append(reply)
         return reply
 
     def run_code(self, code, **kwargs):
@@ -2296,7 +2382,7 @@ class ConversableAgent(LLMAgent):
 
             # Try to execute the function
             if arguments is not None:
-                iostream.print(
+                await iostream.print(
                     colored(f"\n>>>>>>>> EXECUTING ASYNC FUNCTION {func_name}...", "magenta"),
                     flush=True,
                 )
