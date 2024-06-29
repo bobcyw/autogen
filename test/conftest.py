@@ -1,4 +1,5 @@
 import pytest
+import logging
 
 skip_openai = False
 skip_redis = False
@@ -24,3 +25,10 @@ def pytest_configure(config):
     skip_redis = config.getoption("--skip-redis", False)
     global skip_docker
     skip_docker = config.getoption("--skip-docker", False)
+    # logging.basicConfig(level=logging.DEBUG)
+    def disable_log(name):
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.ERROR)
+    disable_log('websockets.client')
+    disable_log('websockets.server')
+
