@@ -39,7 +39,7 @@ from .utils import consolidate_chat_info, gather_usage_summary
 __all__ = ("ConversableAgent",)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
