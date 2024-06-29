@@ -807,7 +807,7 @@ class ConversableAgent(LLMAgent):
             iostream = IOStream.get_default()
             # print the message received
             # 打印开始的名称
-            await iostream.print(colored(sender.name, "yellow"), "(to", f"{self.name}):\n", flush=True)
+            # await iostream.print(colored(sender.name, "yellow"), "(to", f"{self.name}):\n", flush=True)
             message = self._message_to_dict(message)
 
             if message.get("tool_responses"):  # Handle tool multi-call responses
@@ -865,7 +865,7 @@ class ConversableAgent(LLMAgent):
                         # 打印分割线"---"和tool_calls
                         await iostream.print(colored("*" * len(func_print), "green"), flush=True)
 
-            await iostream.print("\n", "-" * 80, flush=True, sep="")
+            # await iostream.print("\n", "-" * 80, flush=True, sep="")
 
     def receive(
         self,
