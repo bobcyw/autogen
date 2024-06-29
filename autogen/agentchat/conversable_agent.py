@@ -823,9 +823,9 @@ class ConversableAgent(LLMAgent):
                     id_key = "tool_call_id"
                 id = message.get(id_key, "No id found")
                 func_print = f"***** Response from calling {message['role']} ({id}) *****"
-                await iostream.print(colored(func_print, "green"), flush=True)
-                await iostream.print(message["content"], flush=True)
-                await iostream.print(colored("*" * len(func_print), "green"), flush=True)
+                # await iostream.print(colored(func_print, "green"), flush=True)
+                # await iostream.print(message["content"], flush=True)
+                # await iostream.print(colored("*" * len(func_print), "green"), flush=True)
             else:
                 content = message.get("content")
                 if content is not None:
@@ -855,15 +855,15 @@ class ConversableAgent(LLMAgent):
                         id = tool_call.get("id", "No tool call id found")
                         function_call = dict(tool_call.get("function", {}))
                         func_print = f"***** Suggested tool call ({id}): {function_call.get('name', '(No function name found)')} *****"
-                        await iostream.print(colored(func_print, "green"), flush=True)
-                        await iostream.print(
-                            "Arguments: \n",
-                            function_call.get("arguments", "(No arguments found)"),
-                            flush=True,
-                            sep="",
-                        )
+                        # await iostream.print(colored(func_print, "green"), flush=True)
+                        # await iostream.print(
+                        #     "Arguments: \n",
+                        #     function_call.get("arguments", "(No arguments found)"),
+                        #     flush=True,
+                        #     sep="",
+                        # )
                         # 打印分割线"---"和tool_calls
-                        await iostream.print(colored("*" * len(func_print), "green"), flush=True)
+                        # await iostream.print(colored("*" * len(func_print), "green"), flush=True)
 
             # await iostream.print("\n", "-" * 80, flush=True, sep="")
 
@@ -939,7 +939,7 @@ class ConversableAgent(LLMAgent):
         if request_reply is False or request_reply is None and self.reply_at_receive[sender] is False:
             return
         reply = await self.a_generate_reply(sender=sender)
-        if reply is not None:
+        if reply is not None and reply != "":
             await self.a_send(reply, sender, silent=silent)
 
     def _prepare_chat(
@@ -2382,10 +2382,10 @@ class ConversableAgent(LLMAgent):
 
             # Try to execute the function
             if arguments is not None:
-                await iostream.print(
-                    colored(f"\n>>>>>>>> EXECUTING ASYNC FUNCTION {func_name}...", "magenta"),
-                    flush=True,
-                )
+                # await iostream.print(
+                #     colored(f"\n>>>>>>>> EXECUTING ASYNC FUNCTION {func_name}...", "magenta"),
+                #     flush=True,
+                # )
                 try:
                     if inspect.iscoroutinefunction(func):
                         content = await func(**arguments)
